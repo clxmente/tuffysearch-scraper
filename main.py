@@ -64,14 +64,21 @@ def get_course_info(
         dict[str, str]: A dictionary containing the course information.
 
     Example Course:
+    ```json
         {
-            "title": "Financial Accounting",\n
-            "description": "Accounting concepts and techniques essential to the ...",\n
-            "department": "Accounting",\n
-            "course_code": "ACCT 201A",\n
-            "course_id": 537360,\n
-            "units": "1-3"
+            "title": "Financial Accounting",
+            "description": "Accounting concepts and techniques essential to the ...",
+            "department": "Accounting",
+            "course_code": "ACCT 201A",
+            "course_id": 537360,
+            "units": "1-3",
+            "prereqs": "Prerequisites: ACCT 301A , BUAD 301 with a 'C' (2.0) or better",
+            "grad_credit": true,
+            "available_online": true,
+            "typically_offered": "Fall/Spring",
+            "requires_dept_consent": true,
         }
+    ```
     """
     course_header = expanded_element.find("h3").text.strip()
     # Example: "ACCT 201A - Financial Accounting (3)" -> ["ACCT 201A", "Financial Accounting (3)"]
@@ -89,6 +96,25 @@ def get_course_info(
         expanded_element.find("h3").find_next_sibling("hr").next_sibling.strip()
     )
 
+    # the description is always the first text after the header, we want to parse everything after description
+    sibling = (
+        expanded_element.find("h3").find_next_sibling("hr").next_sibling.next_sibling
+    )
+    blocks = []
+    current_block = ""
+    while sibling:
+        if sibling.name == "br":
+            if current_block.strip():
+                blocks.append(current_block.strip())
+                current_block = ""
+        else:
+            text = sibling.text.strip()
+            if text:
+                current_block += " " + text
+        sibling = sibling.next_sibling
+    if current_block.strip():
+        blocks.append(current_block.strip())
+
     course = {
         "title": course_title.strip(),
         "description": course_description.strip(),
@@ -97,6 +123,30 @@ def get_course_info(
         "course_id": course_id,
         "units": units,
     }
+
+    # add extra fields if they exist
+    # typically the order is prereqs, available for grad credit, available online, dept consent required, typically offered
+    # we've extracted these strings from all text after the description
+    for block in blocks:
+        if "requisite" in block.lower():
+            course["prereqs"] = block
+        elif block.lower() == "undergraduate course not available for graduate credit":
+            course["grad_credit"] = False
+        elif block.lower() in [
+            "graduate-level",
+            "400-level undergraduate course available for graduate credit",
+        ]:
+            course["grad_credit"] = True
+        elif (
+            block.lower() == "one or more sections may be offered in any online format."
+        ):
+            course["available_online"] = True
+        elif block.lower() == "department consent required":
+            course["requires_dept_consent"] = True
+        elif block.lower().startswith("typically offered:"):
+            course["typically_offered"] = block.split(":")[1].strip()
+        else:
+            print("unknown block", block)
 
     return course
 
@@ -243,9 +293,7 @@ if __name__ == "__main__":
                 try:
                     future.result()  # This will raise any exceptions that occurred
                 except Exception as e:
-                    logging.error(
-                        "A thread encountered an error. Check scraper.log for details."
-                    )
+                    logging.error("A thread encountered an error")
                     # Don't exit immediately, let other threads complete
 
     # Only save if we have some data
@@ -254,6 +302,4 @@ if __name__ == "__main__":
             json.dump(Courses, f, indent=2)
         logging.info(f"Successfully saved {len(Courses)} courses to {OUTPUT_FILENAME}")
     else:
-        logging.error(
-            "No courses were scraped successfully. Check scraper.log for details."
-        )
+        logging.error("No courses were scraped successfully")
