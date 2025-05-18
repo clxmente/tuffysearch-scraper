@@ -128,7 +128,7 @@ def get_course_info(
     # typically the order is prereqs, available for grad credit, available online, dept consent required, typically offered
     # we've extracted these strings from all text after the description
     for block in blocks:
-        if "requisite" in block.lower():
+        if "requisite" in block.lower() or block.lower().startswith("prereq"):
             course["prereqs"] = block
         elif block.lower() == "undergraduate course not available for graduate credit":
             course["grad_credit"] = False
@@ -146,10 +146,18 @@ def get_course_info(
         elif block.lower().startswith("typically offered:"):
             course["typically_offered"] = block.split(":")[1].strip()
         else:
-            print("unknown block", block)
+            print(f"unknown block in {course_code}:", block)
 
-    # we'll add an extra field for the course level like "101A" -> 1, "201A" -> 2, etc.
-    course["level"] = int(course_code.split(" ")[1][0])
+    # extract course level, handling special cases like "10S" which apparently exist
+    # for some early start courses
+    course_number = course_code.split(" ")[1]
+    level_str = ""
+    for char in course_number:
+        if char.isdigit():
+            level_str += char
+        else:
+            break
+    course["course_level"] = int(level_str)
     return course
 
 
