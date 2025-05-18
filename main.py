@@ -148,6 +148,8 @@ def get_course_info(
         else:
             print("unknown block", block)
 
+    # we'll add an extra field for the course level like "101A" -> 1, "201A" -> 2, etc.
+    course["level"] = int(course_code.split(" ")[1][0])
     return course
 
 
