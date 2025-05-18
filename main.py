@@ -92,14 +92,8 @@ def get_course_info(
     # Get title by removing units portion
     course_title = title_and_units[: title_and_units.rfind("(")].strip()
 
-    course_description = (
-        expanded_element.find("h3").find_next_sibling("hr").next_sibling.strip()
-    )
-
     # the description is always the first text after the header, we want to parse everything after description
-    sibling = (
-        expanded_element.find("h3").find_next_sibling("hr").next_sibling.next_sibling
-    )
+    sibling = expanded_element.find("h3").find_next_sibling("hr").next_sibling
     blocks = []
     current_block = ""
     while sibling:
@@ -117,7 +111,7 @@ def get_course_info(
 
     course = {
         "title": course_title.strip(),
-        "description": course_description.strip(),
+        "description": blocks[0].strip(),
         "department": department,
         "course_code": course_code.strip(),
         "course_id": course_id,
@@ -127,7 +121,7 @@ def get_course_info(
     # add extra fields if they exist
     # typically the order is prereqs, available for grad credit, available online, dept consent required, typically offered
     # we've extracted these strings from all text after the description
-    for block in blocks:
+    for block in blocks[1:]:
         if "requisite" in block.lower() or block.lower().startswith("prereq"):
             course["prereqs"] = block
         elif block.lower() == "undergraduate course not available for graduate credit":
