@@ -9,10 +9,13 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from concurrent.futures import ThreadPoolExecutor, Future
-from modules.course_departments import CourseDepartments
 from rich.progress import TaskID, Progress, BarColumn, SpinnerColumn, TextColumn
 
-OUTPUT_FILENAME = "2025-2026_catalog.json"
+from modules.util import clean_text
+from models.courses import RawCourse
+from modules.course_departments import CourseDepartments
+
+OUTPUT_FILENAME = "raw_2025-2026_catalog.json"
 # Find in url at csuf course catalog and click on the course descriptions
 NAVOID = 14518
 CATOID = 95
@@ -50,9 +53,7 @@ def get_course_id(unexpanded_element) -> int:
     return int(course_id)
 
 
-def get_course_info(
-    expanded_element, course_id: int, department: str
-) -> dict[str, str | int]:
+def get_course_info(expanded_element, course_id: int, department: str) -> RawCourse:
     """Returns a dictionary containing the course information.
 
     Args:
@@ -61,36 +62,10 @@ def get_course_info(
         department (str): The department of the course taken from the section header.
 
     Returns:
-        dict[str, str]: A dictionary containing the course information.
-
-    Example Course:
-    ```json
-        {
-            "title": "Financial Accounting",
-            "description": "Accounting concepts and techniques essential to the ...",
-            "department": "Accounting",
-            "course_code": "ACCT 201A",
-            "course_id": 537360,
-            "units": "1-3",
-            "prereqs": "Prerequisites: ACCT 301A , BUAD 301 with a 'C' (2.0) or better",
-            "grad_credit": true,
-            "available_online": true,
-            "typically_offered": "Fall/Spring",
-            "requires_dept_consent": true,
-        }
-    ```
+        RawCourse: A dictionary containing the course information.
     """
-    course_header = expanded_element.find("h3").text.strip()
-    # Example: "ACCT 201A - Financial Accounting (3)" -> ["ACCT 201A", "Financial Accounting (3)"]
-    course_parts = course_header.split("-", maxsplit=1)
-    # Get course code from first part
-    course_code = course_parts[0].strip()
-    # Get title and units from second part
-    title_and_units = course_parts[1].strip()
-    # Extract units from parentheses and convert to int
-    units = title_and_units[title_and_units.rfind("(") + 1 : title_and_units.rfind(")")]
-    # Get title by removing units portion
-    course_title = title_and_units[: title_and_units.rfind("(")].strip()
+    # Example: "ACCT 201A - Financial Accounting (3)"
+    course_header = clean_text(expanded_element.find("h3").text.strip())
 
     # the description is always the first text after the header, we want to parse everything after description
     sibling = expanded_element.find("h3").find_next_sibling("hr").next_sibling
@@ -99,7 +74,7 @@ def get_course_info(
     while sibling:
         if sibling.name == "br":
             if current_block.strip():
-                blocks.append(current_block.strip())
+                blocks.append(clean_text(current_block.strip()))
                 current_block = ""
         else:
             text = sibling.text.strip()
@@ -107,63 +82,26 @@ def get_course_info(
                 current_block += " " + text
         sibling = sibling.next_sibling
     if current_block.strip():
-        blocks.append(current_block.strip())
+        blocks.append(clean_text(current_block.strip()))
 
-    course = {
-        "title": course_title.strip(),
-        "description": blocks[0].strip(),
-        "department": department,
-        "course_code": course_code.strip(),
+    course: RawCourse = {
         "course_id": course_id,
-        "units": units,
+        "department": department,
+        "header": course_header,
+        "blocks": blocks,
     }
-
-    # add extra fields if they exist
-    # typically the order is prereqs, available for grad credit, available online, dept consent required, typically offered
-    # we've extracted these strings from all text after the description
-    for block in blocks[1:]:
-        if "requisite" in block.lower() or block.lower().startswith("prereq"):
-            course["prereqs"] = block
-        elif block.lower() == "undergraduate course not available for graduate credit":
-            course["grad_credit"] = False
-        elif block.lower() in [
-            "graduate-level",
-            "400-level undergraduate course available for graduate credit",
-        ]:
-            course["grad_credit"] = True
-        elif (
-            block.lower() == "one or more sections may be offered in any online format."
-        ):
-            course["available_online"] = True
-        elif block.lower() == "department consent required":
-            course["requires_dept_consent"] = True
-        elif block.lower().startswith("typically offered:"):
-            course["typically_offered"] = block.split(":")[1].strip()
-        else:
-            print(f"unknown block in {course_code}:", block)
-
-    # extract course level, handling special cases like "10S" which apparently exist
-    # for some early start courses
-    course_number = course_code.split(" ")[1]
-    level_str = ""
-    for char in course_number:
-        if char.isdigit():
-            level_str += char
-        else:
-            break
-    course["course_level"] = int(level_str)
     return course
 
 
 def loop_through_courses(
-    expanded_table, unexpanded_table, courses: dict[str, dict[str, str | int]]
+    expanded_table, unexpanded_table, courses: list[RawCourse]
 ) -> None:
-    """Loop through individual page of courses and add them to the courses dictionary.
+    """Loop through individual page of courses and add them to the courses list.
 
     Args:
         expanded_table (bs4.element.Tag): Page element containing the expanded course information. Used for getting the course description.
         unexpanded_table (bs4.element.Tag): Page element containing the unexpanded course information. Used for getting the course id.
-        courses (dict[str, dict[str, str | int]]): Dictionary containing all the courses. Keys are course ids.
+        courses (list[RawCourse]): List containing all the courses.
     """
 
     # ! For some reason, the table body is not found in da soup.
@@ -203,7 +141,7 @@ def loop_through_courses(
             course_id=course_id,
             department=current_section,
         )
-        courses[str(course_id)] = course
+        courses.append(course)
 
 
 job_progress = Progress(
@@ -216,7 +154,7 @@ job_progress = Progress(
 def process_page(
     expanded_url: str,
     unexpanded_url: str,
-    courses: dict[str, dict[str, str | int]],
+    courses: list[RawCourse],
     task_id: TaskID,
 ) -> None:
     try:
@@ -274,7 +212,7 @@ if __name__ == "__main__":
     # 2024-2025, for some reason 2025-2026 is missing the course departments page
     course_departments = CourseDepartments(navoid=13399, catoid=91)
 
-    Courses = {}
+    Courses: list[RawCourse] = []
     futures: list[Future] = []
 
     with Live(progress_table, refresh_per_second=10):

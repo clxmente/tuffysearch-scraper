@@ -37,7 +37,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Simply run:
 ```bash
-uv run main.py
+uv run scrape.py
 ```
 
 This will:
@@ -45,20 +45,19 @@ This will:
 2. Install dependencies from `pyproject.toml`
 3. Fetch course data from the CSUF course catalog
 4. Process and organize the information
-5. Save the results to `data/2025-2026_catalog.json`
+5. Save the results to `data/raw_2025-2026_catalog.json`
 
-### Cleaning Unicode Characters
+### Process the raw data
 
-To clean unicode escape sequences from the course descriptions:
+To clean the data and extract relevant information, run the second script:
 ```bash
-uv run clean.py
+uv run reprocess.py
 ```
 
 This will:
-1. Read the catalog JSON file
-2. Replace special characters with their ASCII equivalents
-3. Save the cleaned data to a new file
-4. Print any unknown characters that weren't in the translation map
+1. Read the JSON data taken from the scraped web pages
+2. Save the processed data to `data/processed_2025-2026_catalog.json`
+3. Print any unknown description blocks to the console
 
 ## 📁 Project Structure
 
@@ -66,11 +65,24 @@ This will:
 tuffysearch-scraper/
 ├── data/                  # Output directory for JSON files
 ├── modules/              # Python modules
-│   └── course_departments.py  # (Legacy) Department mapping module
-├── main.py              # Main scraper script
-├── clean.py             # Unicode character cleaning utility
-└── pyproject.toml       # Project metadata and dependencies
+│   ├── course_departments.py  # Department mapping module
+│   └── util.py          # Utility functions
+├── models/              # Data models
+│   └── courses.py       # Course data type definitions
+├── scrape.py           # Main scraper script
+├── reprocess.py        # Course data processing script
+├── clean.py            # Unicode character cleaning utility
+└── pyproject.toml      # Project metadata and dependencies
 ```
+
+The project consists of two main scripts:
+
+1. `scrape.py`: Scrapes course data from the CSUF course catalog using a multi-threaded approach with progress tracking
+2. `reprocess.py`: Processes the raw course data into a structured format with progress tracking
+
+The data flow is:
+1. Raw course data is scraped and saved to `data/raw_YYYY-YYYY_catalog.json`
+2. The raw data is processed and saved to `data/processed_YYYY-YYYY_catalog.json`
 
 ## 🔧 Technical Details
 
